@@ -218,6 +218,93 @@ end do
 
 end subroutine ws_equilibrium_lbc
 
+
+*******************************************************************************
+subroutine ws_equilibrium_wave_lbc
+!*******************************************************************************
+use param, only : dz, ld, nx, ny, vonk, zo, dt, dx, total_time
+use sim_param, only : u, v, ustar_lbc
+use test_filtermodule
+use grid_m, only :
+#ifdef PPSCALARS
+use scalars, only : obukhov, phi_m
+#endif
+
+implicit none
+
+integer :: i, j
+real(rprec), dimension(nx, ny) :: denom, u_avg, ur_avg, n
+real(rprec), dimension(ld, ny) :: u1, v1, ur, vr, u2, v2
+real(rprec), dimension(nx,ny) :: x_grid
+real(rprec) :: const
+real(rprec) :: t
+real(rprec) :: a
+real(rprec) :: k
+real(rprec) :: w
+real(rprec) :: c1, c2
+real(rprec), dimension(nx,ny) :: h, dhdx, R
+
+c1 = 7.7_rprec
+c2 = 0.0_rprec
+w = 120.9516_rprec
+a = 0.0089_rprec
+k = 15.7080_rprec
+
+u1 = u(:,:,1)
+v1 = v(:,:,1)
+call test_filter(u1)
+call test_filter(v1)
+
+do j = 1,ny
+        do i = 1,nx
+
+x_grid(i,j) = (i-1)*dx
+h(i,j) = a*cos(k*x_grid(i,j) - w*total_time)
+dhdx(i,j) = a*k*sin(w*total_time - k*x_grid(i,j))
+
+        end do
+end do
+
+u_avg = sqrt(u1(1:nx,1:ny)**2+v1(1:nx,1:ny)**2)
+ur_avg = sqrt((u1(1:nx,1:ny)-c1)**2+(v1(1:nx,1:ny)-c2)**2)
+
+ur = u1(1:nx,1:ny) - c1
+vr = v1(1:nx,1:ny) - c2
+
+!#ifdef PPSCALARS
+!call obukhov(u_avg)
+!#else
+!ustar_lbc = ui_avg*vonk/denom
+!#endif
+
+do j = 1, ny
+    do i = 1, nx
+
+        n(i,j) = ur(i,j)/ur_avg(i,j)
+        R(i,j) = (n(i,j)*dhdx(i,j) + abs(n(i,j)*dhdx(i,j)))/2
+        denom(i,j) = log((0.5_rprec*dz-h(i,j))/zo)
+        ustar_lbc(i,j) = u_avg(i,j)*vonk/denom(i,j)
+        const = -(ustar_lbc(i,j)**2)/u_avg(i,j)
+        txz(i,j,1) = const*u1(i,j) - R(i,j)*ur(i,j)*ur_avg(i,j)
+        tyz(i,j,1) = const*v1(i,j) - R(i,j)*vr(i,j)*ur_avg(i,j)
+
+#ifdef PPSCALARS
+        dudz(i,j,1) = ustar_lbc(i,j)/(0.5_rprec*dz*vonK)*u(i,j,1)/u_avg(i,j)   &
+            * phi_m(i,j)
+        dvdz(i,j,1) = ustar_lbc(i,j)/(0.5_rprec*dz*vonK)*v(i,j,1)/u_avg(i,j)   &
+            * phi_m(i,j)
+#else
+        dudz(i,j,1) = ustar_lbc(i,j)/(0.5_rprec*dz*vonK)*u(i,j,1)/u_avg(i,j)
+        dvdz(i,j,1) = ustar_lbc(i,j)/(0.5_rprec*dz*vonK)*v(i,j,1)/u_avg(i,j)
+#endif
+        dudz(i,j,1) = merge(0._rprec,dudz(i,j,1),u(i,j,1).eq.0._rprec)
+        dvdz(i,j,1) = merge(0._rprec,dvdz(i,j,1),v(i,j,1).eq.0._rprec)
+    end do
+end do
+
+end subroutine ws_equilibrium_wave_lbc
+
+
 !*******************************************************************************
 subroutine ws_equilibrium_ubc
 !*******************************************************************************
