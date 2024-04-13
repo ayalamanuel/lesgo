@@ -1,4 +1,4 @@
-!!
+!e
 !!  Copyright (C) 2009-2017  Johns Hopkins University
 !!
 !!  This file is part of lesgo.
@@ -31,7 +31,7 @@ use param
 use sim_param
 use grid_m
 use io, only : energy, output_loop, output_final, jt_total
-use io, only : write_tau_wall_bot, write_tau_wall_top
+use io, only : write_tau_wall_bot, write_tau_wall_top, write_wave
 use fft
 use derivatives, only : filt_da, ddz_uv, ddz_w
 use test_filtermodule
@@ -39,6 +39,8 @@ use cfl_util
 use sgs_stag_util, only : sgs_stag
 use forcing
 use functions, only: get_tau_wall_bot, get_tau_wall_top
+use functions, only: get_eqm_wall_bot, get_wpm_wall_bot, get_ReFit_bot, &
+                     get_ReDelta_bot, get_uLES
 
 #ifdef PPMPI
 use mpi
@@ -68,8 +70,8 @@ character (*), parameter :: prog_name = 'main'
 integer :: nca
 character(:), allocatable :: ca
 
-integer :: jt_step, nstart
-real(rprec) :: rmsdivvel, ke, maxcfl, tt
+integer :: jt_step, nstart,i,j
+real(rprec) :: rmsdivvel, ke, maxcfl, tt, integral
 
 type(clock_t) :: clock, clock_total, clock_forcing
 
@@ -290,6 +292,13 @@ time_loop: do jt_step = nstart, nsteps
         dt * ( tadv1 * RHSy(:,:,1:nz-1) + tadv2 * RHSy_f(:,:,1:nz-1) )
     w(:,:,1:nz-1) = w(:,:,1:nz-1) +                                            &
         dt * ( tadv1 * RHSz(:,:,1:nz-1) + tadv2 * RHSz_f(:,:,1:nz-1) )
+    
+    if (worb .and. coord==0) then
+
+    w(:,:,1) = w_orb(:,:)
+
+    end if
+
     if (coord == nproc-1) then
         w(:,:,nz) = w(:,:,nz) +                                                &
             dt * ( tadv1 * RHSz(:,:,nz) + tadv2 * RHSz_f(:,:,nz) )
@@ -397,7 +406,7 @@ time_loop: do jt_step = nstart, nsteps
         tau_top = maxdummy
 #endif
 
-            if (coord == 0) then
+       if (coord == 0) then
             write(*,*)
             write(*,'(a)') '==================================================='
             write(*,'(a)') 'Time step information:'
@@ -411,6 +420,14 @@ time_loop: do jt_step = nstart, nsteps
             write(*,'(a,E15.7)') '  Velocity divergence metric: ', rmsdivvel
             write(*,'(a,E15.7)') '  Kinetic energy: ', ke
             write(*,'(a,E15.7)') '  Bot wall stress: ', get_tau_wall_bot()
+            write(*,'(a,E15.7)') '  Bot EQWM stress: ', get_eqm_wall_bot()
+            write(*,'(a,E15.7)') '  Bot MOSD stress: ', get_wpm_wall_bot()
+            write(*,'(a,E15.7)') '  Re_fit: ',   get_ReFit_bot()
+            write(*,'(a,E15.7)') '  Re_delta: ', get_ReDelta_bot()
+            write(*,'(a,E15.7)') '  uLES: ', get_uLES()
+            write(*,'(a,E15.7)') '  max(eta): ', maxval(eta_spectrum)
+            write(*,'(a,E15.7)') '  max(C): ', maxval(C_mag)
+            write(*,'(a,E15.7)') '  min(GradEta): ', minval(grad_eta_mag)
 #ifdef PPMPI
             write(*,'(a,E15.7)') '  Top wall stress: ', tau_top
 #else
@@ -435,6 +452,7 @@ time_loop: do jt_step = nstart, nsteps
             end if
             write(*,'(a)') '==================================================='
             call write_tau_wall_bot()
+            call write_wave()
         end if
         if(coord == nproc-1) then
             call write_tau_wall_top()
